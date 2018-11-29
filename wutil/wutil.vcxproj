@@ -119,6 +119,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="win_utils.h" />
+    <ClInclude Include="wutil.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

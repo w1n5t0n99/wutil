@@ -23,5 +23,8 @@
     <ClInclude Include="win_utils.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="wutil.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
 </Project>
