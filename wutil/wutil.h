@@ -108,6 +108,35 @@ namespace wutil
 
 		static const int Default_DPI = 96;
 
+		struct MRect
+		{
+			int x = 0;
+			int y = 0;
+			int w = 0;
+			int h = 0;
+		};
+
+		struct Disp
+		{
+			TCHAR device_name[CCHDEVICENAME];
+			DWORD bits_per_pixel = 0;
+			DWORD pixel_width = 0;
+			DWORD pixel_height = 0;
+			DWORD display_flags = 0;
+			DWORD display_frequency = 0;
+			DWORD display_orientation = 0;
+			POINTL display_position = { 0, 0 };
+		};
+
+		struct WindowInfo
+		{
+			WINDOWPLACEMENT placement = {};
+			LONG style = NULL;
+		};
+
+		//=========================================================================
+		// dynamically load dpi functions to support older windows versions
+		//===========================================================================
 		void load_dpi_functions()
 		{
 			static bool IS_DPI_LOADED = false;
@@ -130,7 +159,69 @@ namespace wutil
 			IS_DPI_LOADED = true;
 			return;
 		}
+
+		//======================================================
+		// win32 callback functions
+		//======================================================
+		BOOL CALLBACK monitor_info_enum_proc(HMONITOR hmonitor, HDC hdc_monitor, LPRECT lprc_monitor, LPARAM dw_data)
+		{
+			auto monitor_vec = reinterpret_cast<std::vector<MONITORINFOEX>*>(dw_data);
+			if (monitor_vec == nullptr)
+				return false;
+
+			MONITORINFOEX mi{};
+			mi.cbSize = sizeof(mi);
+			GetMonitorInfo(hmonitor, &mi);
+			monitor_vec->push_back(mi);
+
+			if (mi.dwFlags & MONITORINFOF_PRIMARY)
+				std::swap(monitor_vec->back(), monitor_vec->front());
+
+			return true;
+		}
+
+		BOOL CALLBACK monitor_bounds_enum_proc(HMONITOR hmonitor, HDC hdc_monitor, LPRECT lprc_monitor, LPARAM dw_data)
+		{
+			auto monitor_vec = reinterpret_cast<std::vector<MRect>*>(dw_data);
+			if (monitor_vec == nullptr)
+				return false;
+
+			MONITORINFOEX mi{};
+			mi.cbSize = sizeof(mi);
+			GetMonitorInfo(hmonitor, &mi);
+			monitor_vec->push_back(
+				MRect{
+				mi.rcMonitor.left,
+				mi.rcMonitor.top,
+				mi.rcMonitor.right - mi.rcMonitor.left,
+				mi.rcMonitor.bottom - mi.rcMonitor.top });
+
+			if (mi.dwFlags & MONITORINFOF_PRIMARY)
+				std::swap(monitor_vec->back(), monitor_vec->front());
+
+			return true;
+		}
 	}
+
+	//============================================================
+	// return container of all display devices
+	//============================================================
+	std::vector<DISPLAY_DEVICE> get_all_display_devices()
+	{
+		std::vector<DISPLAY_DEVICE> ddevs;
+		int device_num = 0;
+		
+		DISPLAY_DEVICE d;
+		while (EnumDisplayDevices(NULL, device_num, &d, 0))
+		{
+			ddevs.push_back(d);
+			++device_num;
+		}
+
+		return ddevs;
+	}
+
+
 }
 
 #endif
