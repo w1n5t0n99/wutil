@@ -12,7 +12,7 @@ int main()
 
 	auto dsets = wutil::detail::get_monitor_display_settings(ddevs[0].DeviceName);
 
-	std::cout << "=======================================================================";
+	std::cout << "=======================================================================\n";
 		
 	for (const auto& d : dsets)
 		std::cout << d.dmPelsWidth << " x " << d.dmPelsHeight << " " << d.dmBitsPerPel << " bpp\n";

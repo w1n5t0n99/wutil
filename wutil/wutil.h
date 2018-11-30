@@ -243,6 +243,7 @@ namespace wutil
 		{
 			DEVMODE dm;
 			dm.dmSize = sizeof(dm);
+			dm.dmDriverExtra = 0;
 
 			std::vector<DEVMODE> disp_vec;
 			int i = 0;
