@@ -201,25 +201,83 @@ namespace wutil
 
 			return true;
 		}
-	}
 
-	//============================================================
-	// return container of all display devices
-	//============================================================
-	std::vector<DISPLAY_DEVICE> get_all_display_devices()
-	{
-		std::vector<DISPLAY_DEVICE> ddevs;
-		int device_num = 0;
-		
-		DISPLAY_DEVICE d;
-		while (EnumDisplayDevices(NULL, device_num, &d, 0))
+		//============================================================
+		// return container of all display devices
+		//============================================================
+		std::vector<DISPLAY_DEVICE> get_all_display_devices()
 		{
-			ddevs.push_back(d);
-			++device_num;
+			std::vector<DISPLAY_DEVICE> ddevs;
+
+			DISPLAY_DEVICE d;
+			d.cb = sizeof(d);
+
+			int device_num = 0;
+			while (EnumDisplayDevices(NULL, device_num, &d, 0))
+			{
+				ddevs.push_back(d);
+				++device_num;
+
+				if (d.StateFlags & DISPLAY_DEVICE_PRIMARY_DEVICE)
+					std::swap(ddevs.back(), ddevs.front());
+			}
+
+			return ddevs;
 		}
 
-		return ddevs;
+		//====================================================
+		// return container of all monitor info
+		//====================================================
+		std::vector<MONITORINFOEX> get_all_monitor_info()
+		{
+			std::vector<MONITORINFOEX> info_vec;
+			EnumDisplayMonitors(NULL, NULL, monitor_info_enum_proc, reinterpret_cast<LPARAM>(&info_vec));
+
+			return info_vec;
+		}
+
+		//==========================================================
+		// return container of all display settings for monitor
+		//===========================================================
+		std::vector<DEVMODE> get_monitor_display_settings(const tstring& device_name)
+		{
+			DEVMODE dm;
+			dm.dmSize = sizeof(dm);
+
+			std::vector<DEVMODE> disp_vec;
+			int i = 0;
+			while (EnumDisplaySettingsEx(device_name.c_str(), i, &dm, 0))
+			{
+				disp_vec.push_back(dm);
+				++i;
+			}
+
+			EnumDisplaySettingsEx(device_name.c_str(), ENUM_CURRENT_SETTINGS, &dm, 0);
+			for (int i = 0; i < disp_vec.size(); ++i)
+			{
+				if (disp_vec[i].dmBitsPerPel == dm.dmBitsPerPel &&
+					disp_vec[i].dmPelsWidth == dm.dmPelsWidth &&
+					disp_vec[i].dmPelsHeight == dm.dmPelsHeight &&
+					disp_vec[i].dmDisplayFlags == dm.dmDisplayFlags &&
+					disp_vec[i].dmDisplayFrequency == dm.dmDisplayFrequency &&
+					disp_vec[i].dmPosition.x == dm.dmPosition.x &&
+					disp_vec[i].dmPosition.y == dm.dmPosition.y &&
+					disp_vec[i].dmDisplayOrientation == dm.dmDisplayOrientation)
+				{
+					std::swap(disp_vec[i], disp_vec[0]);
+					break;
+				}
+
+			}
+
+			return disp_vec;
+		}
+
+
+
 	}
+
+
 
 
 }
