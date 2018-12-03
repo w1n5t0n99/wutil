@@ -108,6 +108,10 @@ namespace wutil
 
 		static const int Default_DPI = 96;
 
+		static const int SYMBOLS_NOT_LOADED = 0;
+		static const int SYMBOLS_LOADED_AND_FOUND = 1;
+		static const int SYMBOLS_LOADED_AND_NOT_FOUND = 2;
+
 		struct MRect
 		{
 			int x = 0;
@@ -137,27 +141,47 @@ namespace wutil
 		//=========================================================================
 		// dynamically load dpi functions to support older windows versions
 		//===========================================================================
-		void load_dpi_functions()
+		int load_shcore_symbols()
 		{
-			static bool IS_DPI_LOADED = false;
+			static int symbol_status = SYMBOLS_NOT_LOADED;
 
-			if (IS_DPI_LOADED)
-				return;
+			if (symbol_status > SYMBOLS_NOT_LOADED)
+				return symbol_status;
+
+			HMODULE shcore = LoadLibrary(TEXT("Shcore"));
+			set_process_dpi_awareness = reinterpret_cast<detail::SetProcessDpiAwarenessProc>(GetProcAddress(shcore, "SetProcessDpiAwareness"));
+			get_process_dpi_awareness = reinterpret_cast<detail::GetProcessDpiAwarenessProc>(GetProcAddress(shcore, "GetProcessDpiAwareness"));
+			get_dpi_for_monitor = reinterpret_cast<detail::GetDpiForMonitorProc>(GetProcAddress(shcore, "GetDpiForMonitor"));
+
+			if (set_process_dpi_awareness)
+				symbol_status = SYMBOLS_LOADED_AND_FOUND;
+			else
+				symbol_status = SYMBOLS_LOADED_AND_NOT_FOUND;
+
+			return symbol_status;
+		}
+
+		int load_user32_symbols()
+		{
+			static int symbol_status = SYMBOLS_NOT_LOADED;
+
+			if (symbol_status > SYMBOLS_NOT_LOADED)
+				return symbol_status;
 
 			HMODULE user32 = LoadLibrary(TEXT("User32"));
-			detail::set_thread_dpi_awareness_context = reinterpret_cast<detail::SetThreadDpiAwarenessContextProc>(GetProcAddress(user32, "SetThreadDpiAwarenessContext"));
-			detail::get_thread_dpi_awareness_context = reinterpret_cast<detail::GetThreadDpiAwarenessContextProc>(GetProcAddress(user32, "GetThreadDpiAwarenessContext"));
-			detail::enable_nonclient_dpi_scaling = reinterpret_cast<detail::EnableNonClientDpiScalingProc>(GetProcAddress(user32, "EnableNonClientDpiScaling"));
-			detail::get_dpi_for_window = reinterpret_cast<detail::GetDpiForWindowProc>(GetProcAddress(user32, "GetDpiForWindow"));
-			detail::are_dpi_awareness_contexts_equal = reinterpret_cast<detail::AreDpiAwarenessContextsEqualProc>(GetProcAddress(user32, "AreDpiAwarenessContextsEqual"));
-			detail::system_parameters_info_for_dpi = reinterpret_cast<detail::SystemParametersInfoForDpiProc>(GetProcAddress(user32, "SystemParametersInfoForDpi"));
-			HMODULE shcore = LoadLibrary(TEXT("Shcore"));
-			detail::set_process_dpi_awareness = reinterpret_cast<detail::SetProcessDpiAwarenessProc>(GetProcAddress(shcore, "SetProcessDpiAwareness"));
-			detail::get_process_dpi_awareness = reinterpret_cast<detail::GetProcessDpiAwarenessProc>(GetProcAddress(shcore, "GetProcessDpiAwareness"));
-			detail::get_dpi_for_monitor = reinterpret_cast<detail::GetDpiForMonitorProc>(GetProcAddress(shcore, "GetDpiForMonitor"));
+			set_thread_dpi_awareness_context = reinterpret_cast<detail::SetThreadDpiAwarenessContextProc>(GetProcAddress(user32, "SetThreadDpiAwarenessContext"));
+			get_thread_dpi_awareness_context = reinterpret_cast<detail::GetThreadDpiAwarenessContextProc>(GetProcAddress(user32, "GetThreadDpiAwarenessContext"));
+			enable_nonclient_dpi_scaling = reinterpret_cast<detail::EnableNonClientDpiScalingProc>(GetProcAddress(user32, "EnableNonClientDpiScaling"));
+			get_dpi_for_window = reinterpret_cast<detail::GetDpiForWindowProc>(GetProcAddress(user32, "GetDpiForWindow"));
+			are_dpi_awareness_contexts_equal = reinterpret_cast<detail::AreDpiAwarenessContextsEqualProc>(GetProcAddress(user32, "AreDpiAwarenessContextsEqual"));
+			system_parameters_info_for_dpi = reinterpret_cast<detail::SystemParametersInfoForDpiProc>(GetProcAddress(user32, "SystemParametersInfoForDpi"));
 
-			IS_DPI_LOADED = true;
-			return;
+			if (set_thread_dpi_awareness_context)
+				symbol_status = SYMBOLS_LOADED_AND_FOUND;
+			else
+				symbol_status = SYMBOLS_LOADED_AND_NOT_FOUND;
+
+			return symbol_status;
 		}
 
 		//======================================================
