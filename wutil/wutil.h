@@ -1,6 +1,8 @@
 #ifndef WUTIL_INCLUDED
 #define WUTIL_INCLUDED
 
+#include <optional>
+
 #if defined(WIN32) || defined(_WIN32) || defined(_WIN64)
 #define OS_WIN
 #else
@@ -112,30 +114,12 @@ namespace wutil
 		static const int SYMBOLS_LOADED_AND_FOUND = 1;
 		static const int SYMBOLS_LOADED_AND_NOT_FOUND = 2;
 
-		struct MRect
-		{
-			int x = 0;
-			int y = 0;
-			int w = 0;
-			int h = 0;
-		};
-
-		struct Disp
-		{
-			TCHAR device_name[CCHDEVICENAME];
-			DWORD bits_per_pixel = 0;
-			DWORD pixel_width = 0;
-			DWORD pixel_height = 0;
-			DWORD display_flags = 0;
-			DWORD display_frequency = 0;
-			DWORD display_orientation = 0;
-			POINTL display_position = { 0, 0 };
-		};
-
 		struct WindowInfo
 		{
 			WINDOWPLACEMENT placement = {};
-			LONG style = NULL;
+			RECT rect = {};
+			LONG style = 0;
+			LONG ex_style = 0;
 		};
 
 		//=========================================================================
@@ -204,31 +188,9 @@ namespace wutil
 			return true;
 		}
 
-		BOOL CALLBACK monitor_bounds_enum_proc(HMONITOR hmonitor, HDC hdc_monitor, LPRECT lprc_monitor, LPARAM dw_data)
-		{
-			auto monitor_vec = reinterpret_cast<std::vector<MRect>*>(dw_data);
-			if (monitor_vec == nullptr)
-				return false;
-
-			MONITORINFOEX mi{};
-			mi.cbSize = sizeof(mi);
-			GetMonitorInfo(hmonitor, &mi);
-			monitor_vec->push_back(
-				MRect{
-				mi.rcMonitor.left,
-				mi.rcMonitor.top,
-				mi.rcMonitor.right - mi.rcMonitor.left,
-				mi.rcMonitor.bottom - mi.rcMonitor.top });
-
-			if (mi.dwFlags & MONITORINFOF_PRIMARY)
-				std::swap(monitor_vec->back(), monitor_vec->front());
-
-			return true;
-		}
-
-		//============================================================
-		// return container of all display devices
-		//============================================================
+		//=============================================================================
+		// return container of all display devices, first item will be primary device
+		//=============================================================================
 		std::vector<DISPLAY_DEVICE> get_all_display_devices()
 		{
 			std::vector<DISPLAY_DEVICE> ddevs;
@@ -249,9 +211,9 @@ namespace wutil
 			return ddevs;
 		}
 
-		//====================================================
-		// return container of all monitor info
-		//====================================================
+		//==========================================================================
+		// return container of all monitor info, first item will be primary monitor
+		//==========================================================================
 		std::vector<MONITORINFOEX> get_all_monitor_info()
 		{
 			std::vector<MONITORINFOEX> info_vec;
@@ -261,7 +223,8 @@ namespace wutil
 		}
 
 		//==========================================================
-		// return container of all display settings for monitor
+		// return container of all display settings for monitor,
+		// first item will be current display settings
 		//===========================================================
 		std::vector<DEVMODE> get_monitor_display_settings(const tstring& device_name)
 		{
@@ -298,13 +261,40 @@ namespace wutil
 			return disp_vec;
 		}
 
+		WindowInfo set_window_fullscreen(HWND hwnd, const MONITORINFOEX& minfo, DEVMODE& dmode)
+		{
+			WindowInfo saved_window_info;
+			saved_window_info.style = GetWindowLong(hwnd, GWL_STYLE);
+			saved_window_info.ex_style = GetWindowLong(hwnd, GWL_EXSTYLE);
+			GetWindowPlacement(hwnd, &saved_window_info.placement);
+			GetWindowRect(hwnd, &saved_window_info.rect);
 
+			WINDOWPLACEMENT fullscreen_placement = saved_window_info.placement;
+			fullscreen_placement.showCmd = SW_SHOWNORMAL;
+			fullscreen_placement.rcNormalPosition = { 0, 0, dmode.dmPelsWidth, dmode.dmPelsHeight };
+
+			auto res = ChangeDisplaySettingsEx(minfo.szDevice, &dmode, NULL, CDS_FULLSCREEN, NULL);
+			if (res == DISP_CHANGE_SUCCESSFUL)
+			{
+				SetWindowLong(hwnd, GWL_STYLE, saved_window_info.style & ~(WS_CAPTION | WS_THICKFRAME));
+				SetWindowLong(hwnd, GWL_EXSTYLE, saved_window_info.ex_style & ~(WS_EX_DLGMODALFRAME |
+						WS_EX_WINDOWEDGE | WS_EX_CLIENTEDGE | WS_EX_STATICEDGE));
+				
+				SetWindowPos(hwnd, NULL, minfo.rcMonitor.left,
+					minfo.rcMonitor.top,
+					minfo.rcMonitor.right - minfo.rcMonitor.left,
+					minfo.rcMonitor.bottom - minfo.rcMonitor.top,
+					SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
+
+				return saved_window_info;
+			}
+			else
+			{
+				return {};
+			}
+		}
 
 	}
-
-
-
-
 }
 
 #endif
