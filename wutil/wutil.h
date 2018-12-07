@@ -260,14 +260,15 @@ namespace wutil
 			EnumDisplaySettingsEx(device_name.c_str(), ENUM_CURRENT_SETTINGS, &dm, 0);
 			for (int i = 0; i < disp_vec.size(); ++i)
 			{
+				// orientation and position appear to only be set for ENUM_CURRENT_SETTINGS
 				if (disp_vec[i].dmBitsPerPel == dm.dmBitsPerPel &&
 					disp_vec[i].dmPelsWidth == dm.dmPelsWidth &&
 					disp_vec[i].dmPelsHeight == dm.dmPelsHeight &&
 					disp_vec[i].dmDisplayFlags == dm.dmDisplayFlags &&
-					disp_vec[i].dmDisplayFrequency == dm.dmDisplayFrequency &&
-					disp_vec[i].dmPosition.x == dm.dmPosition.x &&
-					disp_vec[i].dmPosition.y == dm.dmPosition.y &&
-					disp_vec[i].dmDisplayOrientation == dm.dmDisplayOrientation)
+					//disp_vec[i].dmDisplayOrientation == dm.dmDisplayOrientation && 
+					//disp_vec[i].dmPosition.x == dm.dmPosition.x &&
+					//disp_vec[i].dmPosition.y == dm.dmPosition.y &&
+					disp_vec[i].dmDisplayFrequency == dm.dmDisplayFrequency)
 				{
 					std::swap(disp_vec[i], disp_vec[0]);
 					break;
