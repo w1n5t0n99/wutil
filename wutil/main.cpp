@@ -15,7 +15,8 @@ int main()
 	std::cout << "=======================================================================\n";
 		
 	for (const auto& d : dsets)
-		std::cout << d.dmPelsWidth << " x " << d.dmPelsHeight << " " << d.dmBitsPerPel << " bpp\n";
+		std::cout << d.dmPelsWidth << " x " << d.dmPelsHeight << " " << d.dmDisplayFrequency << " mhz ("
+			<< d.dmPosition.x << ": x " << d.dmPosition.y << ": y) " << d.dmDisplayFlags << ": flags \n";
 
 	std::cin.get();
 	return 0;

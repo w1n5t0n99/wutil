@@ -222,6 +222,23 @@ namespace wutil
 			return info_vec;
 		}
 
+		//=============================================================
+		// return monitor info for given device name
+		//=============================================================
+		std::optional<MONITORINFOEX> get_monitor_info(const tstring& device_name)
+		{
+			std::vector<MONITORINFOEX> info_vec;
+			EnumDisplayMonitors(NULL, NULL, monitor_info_enum_proc, reinterpret_cast<LPARAM>(&info_vec));
+
+			for (const auto& mi : info_vec)
+			{
+				if (device_name.compare(mi.szDevice) == 0)
+					return mi;
+			}
+
+			return {};
+		}
+
 		//==========================================================
 		// return container of all display settings for monitor,
 		// first item will be current display settings
@@ -261,7 +278,7 @@ namespace wutil
 			return disp_vec;
 		}
 
-		WindowInfo set_window_fullscreen(HWND hwnd, const MONITORINFOEX& minfo, DEVMODE& dmode)
+		std::optional<WindowInfo> set_window_fullscreen(HWND hwnd, const MONITORINFOEX& mi)
 		{
 			WindowInfo saved_window_info;
 			saved_window_info.style = GetWindowLong(hwnd, GWL_STYLE);
@@ -271,27 +288,52 @@ namespace wutil
 
 			WINDOWPLACEMENT fullscreen_placement = saved_window_info.placement;
 			fullscreen_placement.showCmd = SW_SHOWNORMAL;
-			fullscreen_placement.rcNormalPosition = { 0, 0, dmode.dmPelsWidth, dmode.dmPelsHeight };
+			fullscreen_placement.rcNormalPosition = { mi.rcMonitor.left,
+				mi.rcMonitor.top,
+				mi.rcMonitor.right - mi.rcMonitor.left,
+				mi.rcMonitor.bottom - mi.rcMonitor.top};
 
-			auto res = ChangeDisplaySettingsEx(minfo.szDevice, &dmode, NULL, CDS_FULLSCREEN, NULL);
-			if (res == DISP_CHANGE_SUCCESSFUL)
-			{
-				SetWindowLong(hwnd, GWL_STYLE, saved_window_info.style & ~(WS_CAPTION | WS_THICKFRAME));
-				SetWindowLong(hwnd, GWL_EXSTYLE, saved_window_info.ex_style & ~(WS_EX_DLGMODALFRAME |
-						WS_EX_WINDOWEDGE | WS_EX_CLIENTEDGE | WS_EX_STATICEDGE));
-				
-				SetWindowPos(hwnd, NULL, minfo.rcMonitor.left,
-					minfo.rcMonitor.top,
-					minfo.rcMonitor.right - minfo.rcMonitor.left,
-					minfo.rcMonitor.bottom - minfo.rcMonitor.top,
-					SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
+			LONG res = 0;
+			res += SetWindowLong(hwnd, GWL_STYLE, saved_window_info.style & ~(WS_CAPTION | WS_THICKFRAME));
+			res += SetWindowLong(hwnd, GWL_EXSTYLE, saved_window_info.ex_style & ~(WS_EX_DLGMODALFRAME |
+					WS_EX_WINDOWEDGE | WS_EX_CLIENTEDGE | WS_EX_STATICEDGE));
+			res += SetWindowPlacement(hwnd, &fullscreen_placement);
 
-				return saved_window_info;
-			}
-			else
-			{
+			if (res == 0)
 				return {};
-			}
+			else
+				return saved_window_info;
+		}
+
+		bool reset_window(HWND hwnd, const WindowInfo& wi)
+		{
+			LONG res = 0;
+			res += SetWindowLong(hwnd, GWL_STYLE, wi.style);
+			res += SetWindowLong(hwnd, GWL_EXSTYLE, wi.ex_style);
+			res += SetWindowPlacement(hwnd, &wi.placement);
+
+			if (res == 0)
+				return false;
+			else
+				return true;
+		}
+
+		bool changes_display_settings_fullscreen(const tstring& device_name, DEVMODE& dev_mode)
+		{
+			auto res = ChangeDisplaySettingsEx(device_name.c_str(), &dev_mode, NULL, CDS_FULLSCREEN, NULL);
+			if (res == DISP_CHANGE_SUCCESSFUL)
+				return true;
+			else
+				return false;
+		}
+
+		bool reset_display_settings_fullscreen(const tstring& device_name)
+		{
+			auto res = ChangeDisplaySettingsEx(device_name.c_str(), NULL, NULL, 0, NULL);
+			if (res == DISP_CHANGE_SUCCESSFUL)
+				return true;
+			else
+				return false;
 		}
 
 	}
