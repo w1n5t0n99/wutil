@@ -319,13 +319,13 @@ namespace wutil
 				return true;
 		}
 
-		bool changes_display_settings_fullscreen(const tstring& device_name, DEVMODE& dev_mode)
+		std::optional<MONITORINFOEX> changes_display_settings_fullscreen(const tstring& device_name, DEVMODE& dev_mode)
 		{
 			auto res = ChangeDisplaySettingsEx(device_name.c_str(), &dev_mode, NULL, CDS_FULLSCREEN, NULL);
 			if (res == DISP_CHANGE_SUCCESSFUL)
-				return true;
+				return get_monitor_info(device_name);
 			else
-				return false;
+				return {};
 		}
 
 		bool reset_display_settings_fullscreen(const tstring& device_name)
