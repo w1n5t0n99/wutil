@@ -73,16 +73,11 @@ typedef enum MONITOR_DPI_TYPE {
 #endif
 
 #include <vector>
-#include <algorithm>
-#include <iterator>
 #include <string>
 #include <sstream>
 
 namespace wutil
 {
-	using tstring = std::basic_string<TCHAR>;
-	using tstringstream = std::basic_stringstream<TCHAR>;
-
 	namespace detail
 	{
 		typedef DPI_AWARENESS_CONTEXT(WINAPI * SetThreadDpiAwarenessContextProc)(DPI_AWARENESS_CONTEXT);
@@ -113,14 +108,6 @@ namespace wutil
 		static const int SYMBOLS_NOT_LOADED = 0;
 		static const int SYMBOLS_LOADED_AND_FOUND = 1;
 		static const int SYMBOLS_LOADED_AND_NOT_FOUND = 2;
-
-		struct WindowInfo
-		{
-			WINDOWPLACEMENT placement = {};
-			RECT rect = {};
-			LONG style = 0;
-			LONG ex_style = 0;
-		};
 
 		//=========================================================================
 		// dynamically load dpi functions to support older windows versions
@@ -187,157 +174,434 @@ namespace wutil
 
 			return true;
 		}
-
-		//=============================================================================
-		// return container of all display devices, first item will be primary device
-		//=============================================================================
-		std::vector<DISPLAY_DEVICE> get_all_display_devices()
-		{
-			std::vector<DISPLAY_DEVICE> ddevs;
-
-			DISPLAY_DEVICE d;
-			d.cb = sizeof(d);
-
-			int device_num = 0;
-			while (EnumDisplayDevices(NULL, device_num, &d, 0))
-			{
-				ddevs.push_back(d);
-				++device_num;
-
-				if (d.StateFlags & DISPLAY_DEVICE_PRIMARY_DEVICE)
-					std::swap(ddevs.back(), ddevs.front());
-			}
-
-			return ddevs;
-		}
-
-		//==========================================================================
-		// return container of all monitor info, first item will be primary monitor
-		//==========================================================================
-		std::vector<MONITORINFOEX> get_all_monitor_info()
-		{
-			std::vector<MONITORINFOEX> info_vec;
-			EnumDisplayMonitors(NULL, NULL, monitor_info_enum_proc, reinterpret_cast<LPARAM>(&info_vec));
-
-			return info_vec;
-		}
-
-		//=============================================================
-		// return monitor info for given device name
-		//=============================================================
-		std::optional<MONITORINFOEX> get_monitor_info(const tstring& device_name)
-		{
-			std::vector<MONITORINFOEX> info_vec;
-			EnumDisplayMonitors(NULL, NULL, monitor_info_enum_proc, reinterpret_cast<LPARAM>(&info_vec));
-
-			for (const auto& mi : info_vec)
-			{
-				if (device_name.compare(mi.szDevice) == 0)
-					return mi;
-			}
-
-			return {};
-		}
-
-		//==========================================================
-		// return container of all display settings for monitor,
-		// first item will be current display settings
-		//===========================================================
-		std::vector<DEVMODE> get_monitor_display_settings(const tstring& device_name)
-		{
-			DEVMODE dm;
-			dm.dmSize = sizeof(dm);
-			dm.dmDriverExtra = 0;
-
-			std::vector<DEVMODE> disp_vec;
-			int i = 0;
-			while (EnumDisplaySettingsEx(device_name.c_str(), i, &dm, 0))
-			{
-				disp_vec.push_back(dm);
-				++i;
-			}
-
-			EnumDisplaySettingsEx(device_name.c_str(), ENUM_CURRENT_SETTINGS, &dm, 0);
-			for (int i = 0; i < disp_vec.size(); ++i)
-			{
-				// orientation and position appear to only be set for ENUM_CURRENT_SETTINGS
-				if (disp_vec[i].dmBitsPerPel == dm.dmBitsPerPel &&
-					disp_vec[i].dmPelsWidth == dm.dmPelsWidth &&
-					disp_vec[i].dmPelsHeight == dm.dmPelsHeight &&
-					disp_vec[i].dmDisplayFlags == dm.dmDisplayFlags &&
-					//disp_vec[i].dmDisplayOrientation == dm.dmDisplayOrientation && 
-					//disp_vec[i].dmPosition.x == dm.dmPosition.x &&
-					//disp_vec[i].dmPosition.y == dm.dmPosition.y &&
-					disp_vec[i].dmDisplayFrequency == dm.dmDisplayFrequency)
-				{
-					std::swap(disp_vec[i], disp_vec[0]);
-					break;
-				}
-
-			}
-
-			return disp_vec;
-		}
-
-		std::optional<WindowInfo> set_window_fullscreen(HWND hwnd, const MONITORINFOEX& mi)
-		{
-			WindowInfo saved_window_info;
-			saved_window_info.style = GetWindowLong(hwnd, GWL_STYLE);
-			saved_window_info.ex_style = GetWindowLong(hwnd, GWL_EXSTYLE);
-			GetWindowPlacement(hwnd, &saved_window_info.placement);
-			GetWindowRect(hwnd, &saved_window_info.rect);
-
-			WINDOWPLACEMENT fullscreen_placement = saved_window_info.placement;
-			fullscreen_placement.showCmd = SW_SHOWNORMAL;
-			fullscreen_placement.rcNormalPosition = { mi.rcMonitor.left,
-				mi.rcMonitor.top,
-				mi.rcMonitor.right - mi.rcMonitor.left,
-				mi.rcMonitor.bottom - mi.rcMonitor.top};
-
-			LONG res = 0;
-			res += SetWindowLong(hwnd, GWL_STYLE, saved_window_info.style & ~(WS_CAPTION | WS_THICKFRAME));
-			res += SetWindowLong(hwnd, GWL_EXSTYLE, saved_window_info.ex_style & ~(WS_EX_DLGMODALFRAME |
-					WS_EX_WINDOWEDGE | WS_EX_CLIENTEDGE | WS_EX_STATICEDGE));
-			res += SetWindowPlacement(hwnd, &fullscreen_placement);
-
-			if (res == 0)
-				return {};
-			else
-				return saved_window_info;
-		}
-
-		bool reset_window(HWND hwnd, const WindowInfo& wi)
-		{
-			LONG res = 0;
-			res += SetWindowLong(hwnd, GWL_STYLE, wi.style);
-			res += SetWindowLong(hwnd, GWL_EXSTYLE, wi.ex_style);
-			res += SetWindowPlacement(hwnd, &wi.placement);
-
-			if (res == 0)
-				return false;
-			else
-				return true;
-		}
-
-		std::optional<MONITORINFOEX> changes_display_settings_fullscreen(const tstring& device_name, DEVMODE& dev_mode)
-		{
-			auto res = ChangeDisplaySettingsEx(device_name.c_str(), &dev_mode, NULL, CDS_FULLSCREEN, NULL);
-			if (res == DISP_CHANGE_SUCCESSFUL)
-				return get_monitor_info(device_name);
-			else
-				return {};
-		}
-
-		bool reset_display_settings_fullscreen(const tstring& device_name)
-		{
-			auto res = ChangeDisplaySettingsEx(device_name.c_str(), NULL, NULL, 0, NULL);
-			if (res == DISP_CHANGE_SUCCESSFUL)
-				return true;
-			else
-				return false;
-		}
-
 	}
+	
+	using tstring = std::basic_string<TCHAR>;
+	using tstringstream = std::basic_stringstream<TCHAR>;
+
+	struct WindowInfo
+	{
+		WINDOWPLACEMENT placement = {};
+		RECT rect = {};
+		LONG style = 0;
+		LONG ex_style = 0;
+	};
+
+	//=============================================================================
+	// return container of all display devices, first item will be primary device
+	//=============================================================================
+	std::vector<DISPLAY_DEVICE> get_all_display_devices()
+	{
+		std::vector<DISPLAY_DEVICE> ddevs;
+
+		DISPLAY_DEVICE d;
+		d.cb = sizeof(d);
+
+		int device_num = 0;
+		while (EnumDisplayDevices(NULL, device_num, &d, 0))
+		{
+			ddevs.push_back(d);
+			++device_num;
+
+			if (d.StateFlags & DISPLAY_DEVICE_PRIMARY_DEVICE)
+				std::swap(ddevs.back(), ddevs.front());
+		}
+
+		return ddevs;
+	}
+
+	//==========================================================================
+	// return container of all monitor info, first item will be primary monitor
+	//==========================================================================
+	std::vector<MONITORINFOEX> get_all_monitor_info()
+	{
+		std::vector<MONITORINFOEX> info_vec;
+		EnumDisplayMonitors(NULL, NULL, detail::monitor_info_enum_proc, reinterpret_cast<LPARAM>(&info_vec));
+
+		return info_vec;
+	}
+
+	//=============================================================
+	// return monitor info for given device name
+	//=============================================================
+	std::optional<MONITORINFOEX> get_monitor_info(const tstring& device_name)
+	{
+		std::vector<MONITORINFOEX> info_vec;
+		EnumDisplayMonitors(NULL, NULL, detail::monitor_info_enum_proc, reinterpret_cast<LPARAM>(&info_vec));
+
+		for (const auto& mi : info_vec)
+		{
+			if (device_name.compare(mi.szDevice) == 0)
+				return mi;
+		}
+
+		return {};
+	}
+
+	//==========================================================
+	// return container of all display settings for monitor,
+	// first item will be current display settings
+	//===========================================================
+	std::vector<DEVMODE> get_monitor_display_settings(const tstring& device_name)
+	{
+		DEVMODE dm;
+		dm.dmSize = sizeof(dm);
+		dm.dmDriverExtra = 0;
+
+		std::vector<DEVMODE> disp_vec;
+		int i = 0;
+		while (EnumDisplaySettingsEx(device_name.c_str(), i, &dm, 0))
+		{
+			disp_vec.push_back(dm);
+			++i;
+		}
+
+		EnumDisplaySettingsEx(device_name.c_str(), ENUM_CURRENT_SETTINGS, &dm, 0);
+		for (int i = 0; i < disp_vec.size(); ++i)
+		{
+			// orientation and position appear to only be set for ENUM_CURRENT_SETTINGS
+			if (disp_vec[i].dmBitsPerPel == dm.dmBitsPerPel &&
+				disp_vec[i].dmPelsWidth == dm.dmPelsWidth &&
+				disp_vec[i].dmPelsHeight == dm.dmPelsHeight &&
+				disp_vec[i].dmDisplayFlags == dm.dmDisplayFlags &&
+				//disp_vec[i].dmDisplayOrientation == dm.dmDisplayOrientation && 
+				//disp_vec[i].dmPosition.x == dm.dmPosition.x &&
+				//disp_vec[i].dmPosition.y == dm.dmPosition.y &&
+				disp_vec[i].dmDisplayFrequency == dm.dmDisplayFrequency)
+			{
+				std::swap(disp_vec[i], disp_vec[0]);
+				break;
+			}
+
+		}
+
+		return disp_vec;
+	}
+
+	//================================================================
+	// set window as fullscreen, change to monitor dimensions
+	//================================================================
+	std::optional<WindowInfo> set_window_fullscreen(HWND hwnd, const MONITORINFOEX& mi)
+	{
+		WindowInfo saved_window_info;
+		saved_window_info.style = GetWindowLong(hwnd, GWL_STYLE);
+		saved_window_info.ex_style = GetWindowLong(hwnd, GWL_EXSTYLE);
+		GetWindowPlacement(hwnd, &saved_window_info.placement);
+		GetWindowRect(hwnd, &saved_window_info.rect);
+
+		WINDOWPLACEMENT fullscreen_placement = saved_window_info.placement;
+		fullscreen_placement.showCmd = SW_SHOWNORMAL;
+		fullscreen_placement.rcNormalPosition = { mi.rcMonitor.left,
+			mi.rcMonitor.top,
+			mi.rcMonitor.right - mi.rcMonitor.left,
+			mi.rcMonitor.bottom - mi.rcMonitor.top };
+
+		LONG res = 0;
+		res += SetWindowLong(hwnd, GWL_STYLE, saved_window_info.style & ~(WS_CAPTION | WS_THICKFRAME));
+		res += SetWindowLong(hwnd, GWL_EXSTYLE, saved_window_info.ex_style & ~(WS_EX_DLGMODALFRAME |
+			WS_EX_WINDOWEDGE | WS_EX_CLIENTEDGE | WS_EX_STATICEDGE));
+		res += SetWindowPlacement(hwnd, &fullscreen_placement);
+
+		if (res == 0)
+			return {};
+		else
+			return saved_window_info;
+	}
+
+	//===================================================================
+	// set window as fullscreen, change to nearest monitor dimensions
+	//===================================================================
+	std::optional<WindowInfo> set_window_fullscreen(HWND hwnd)
+	{
+		WindowInfo saved_window_info;
+		saved_window_info.style = GetWindowLong(hwnd, GWL_STYLE);
+		saved_window_info.ex_style = GetWindowLong(hwnd, GWL_EXSTYLE);
+		GetWindowPlacement(hwnd, &saved_window_info.placement);
+		GetWindowRect(hwnd, &saved_window_info.rect);
+
+		MONITORINFOEX mi;
+		mi.cbSize = sizeof(mi);
+		auto hmonitor = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
+		if (GetMonitorInfo(hmonitor, &mi) == 0)
+			return {};
+
+		WINDOWPLACEMENT fullscreen_placement = saved_window_info.placement;
+		fullscreen_placement.showCmd = SW_SHOWNORMAL;
+		fullscreen_placement.rcNormalPosition = { mi.rcMonitor.left,
+			mi.rcMonitor.top,
+			mi.rcMonitor.right - mi.rcMonitor.left,
+			mi.rcMonitor.bottom - mi.rcMonitor.top };
+
+		LONG res = 0;
+		res += SetWindowLong(hwnd, GWL_STYLE, saved_window_info.style & ~(WS_CAPTION | WS_THICKFRAME));
+		res += SetWindowLong(hwnd, GWL_EXSTYLE, saved_window_info.ex_style & ~(WS_EX_DLGMODALFRAME |
+			WS_EX_WINDOWEDGE | WS_EX_CLIENTEDGE | WS_EX_STATICEDGE));
+		res += SetWindowPlacement(hwnd, &fullscreen_placement);
+
+		if (res == 0)
+			return {};
+		else
+			return saved_window_info;
+	}
+
+	//====================================================
+	// set window to given settings
+	//======================================================
+	bool set_window_to(HWND hwnd, const WindowInfo& wi)
+	{
+		LONG res = 0;
+		res += SetWindowLong(hwnd, GWL_STYLE, wi.style);
+		res += SetWindowLong(hwnd, GWL_EXSTYLE, wi.ex_style);
+		res += SetWindowPlacement(hwnd, &wi.placement);
+
+		if (res == 0)
+			return false;
+		else
+			return true;
+	}
+
+	//====================================================================
+	// change display settings, enable fullscreen flag
+	//====================================================================
+	std::optional<MONITORINFOEX> changes_display_settings_fullscreen(const tstring& device_name, DEVMODE& dev_mode)
+	{
+		auto res = ChangeDisplaySettingsEx(device_name.c_str(), &dev_mode, NULL, CDS_FULLSCREEN, NULL);
+		if (res == DISP_CHANGE_SUCCESSFUL)
+			return get_monitor_info(device_name);
+		else
+			return {};
+	}
+
+	//=====================================================
+	// reset display settings to previously saved
+	//======================================================
+	bool reset_display_settings_fullscreen(const tstring& device_name)
+	{
+		auto res = ChangeDisplaySettingsEx(device_name.c_str(), NULL, NULL, 0, NULL);
+		if (res == DISP_CHANGE_SUCCESSFUL)
+			return true;
+		else
+			return false;
+	}
+
+	//============================================
+	// get dpi from window
+	//===========================================
+	UINT get_dpi(HWND hwnd)
+	{
+		if (detail::load_user32_symbols() == detail::SYMBOLS_LOADED_AND_FOUND)
+		{
+			return detail::get_dpi_for_window(hwnd);
+		}
+		else if (detail::load_shcore_symbols() == detail::SYMBOLS_LOADED_AND_FOUND)
+		{
+			auto hmonitor = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
+			UINT dpi_x = 0, dpi_y = 0;
+			auto hr = detail::get_dpi_for_monitor(hmonitor, MDT_EFFECTIVE_DPI, &dpi_x, &dpi_y);
+			if (hr == S_OK)
+				return dpi_x;
+			else
+				return detail::Default_DPI;
+		}
+		else
+			return detail::Default_DPI;
+	}
+
+	//======================================
+	// get dpi from point
+	//=======================================
+	UINT get_dpi(const POINT& point)
+	{
+		if (detail::load_shcore_symbols() == detail::SYMBOLS_LOADED_AND_FOUND)
+		{
+			auto hmonitor = MonitorFromPoint(point, MONITOR_DEFAULTTONEAREST);
+			UINT dpi_x = 0, dpi_y = 0;
+			auto hr = detail::get_dpi_for_monitor(hmonitor, MDT_EFFECTIVE_DPI, &dpi_x, &dpi_y);
+			if (hr == S_OK)
+				return dpi_x;
+			else
+				return detail::Default_DPI;
+		}
+		else
+			return detail::Default_DPI;
+	}
+
+	//===============================================
+	// enable per monitor awareness
+	//================================================
+	bool enable_per_monitor_dpi_aware()
+	{
+		if (detail::load_user32_symbols() == detail::SYMBOLS_LOADED_AND_FOUND)
+		{
+			auto previous_context_ = detail::set_thread_dpi_awareness_context(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE);
+			auto current_context = detail::get_thread_dpi_awareness_context();
+
+			if (detail::are_dpi_awareness_contexts_equal(current_context, DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE))
+				return true;
+			else
+				return false;
+
+		}
+		else if (detail::load_shcore_symbols() == detail::SYMBOLS_LOADED_AND_FOUND)
+		{
+			auto result = detail::set_process_dpi_awareness(PROCESS_PER_MONITOR_DPI_AWARE);
+
+			PROCESS_DPI_AWARENESS current_awareness;
+			detail::get_process_dpi_awareness(NULL, &current_awareness);
+
+			if (current_awareness == PROCESS_PER_MONITOR_DPI_AWARE)
+				return true;
+			else
+				return false;
+		}
+		else
+		{
+			return false;
+		}
+	}
+
+	//================================================
+	// enable system awareness
+	//===============================================
+	bool enable_system_dpi_aware()
+	{
+		if (detail::load_user32_symbols() == detail::SYMBOLS_LOADED_AND_FOUND)
+		{
+			auto previous_context_ = detail::set_thread_dpi_awareness_context(DPI_AWARENESS_CONTEXT_SYSTEM_AWARE);
+			auto current_context = detail::get_thread_dpi_awareness_context();
+
+			if (detail::are_dpi_awareness_contexts_equal(current_context, DPI_AWARENESS_CONTEXT_SYSTEM_AWARE))
+				return true;
+			else
+				return false;
+
+		}
+		else if (detail::load_shcore_symbols() == detail::SYMBOLS_LOADED_AND_FOUND)
+		{
+			auto result = detail::set_process_dpi_awareness(PROCESS_SYSTEM_DPI_AWARE);
+
+			PROCESS_DPI_AWARENESS current_awareness;
+			detail::get_process_dpi_awareness(NULL, &current_awareness);
+
+			if (current_awareness == PROCESS_SYSTEM_DPI_AWARE)
+				return true;
+			else
+				return false;
+		}
+		else
+		{
+			return false;
+		}
+	}
+
+	//===========================================
+	// enable unaware
+	//==========================================
+	bool enable_dpi_unaware()
+	{
+		if (detail::load_user32_symbols() == detail::SYMBOLS_LOADED_AND_FOUND)
+		{
+			auto previous_context_ = detail::set_thread_dpi_awareness_context(DPI_AWARENESS_CONTEXT_UNAWARE);
+			auto current_context = detail::get_thread_dpi_awareness_context();
+
+			if (detail::are_dpi_awareness_contexts_equal(current_context, DPI_AWARENESS_CONTEXT_UNAWARE))
+				return true;
+			else
+				return false;
+
+		}
+		else if (detail::load_shcore_symbols() == detail::SYMBOLS_LOADED_AND_FOUND)
+		{
+			auto result = detail::set_process_dpi_awareness(PROCESS_DPI_UNAWARE);
+
+			PROCESS_DPI_AWARENESS current_awareness;
+			detail::get_process_dpi_awareness(NULL, &current_awareness);
+
+			if (current_awareness == PROCESS_DPI_UNAWARE)
+				return true;
+			else
+				return false;
+		}
+		else
+		{
+			return false;
+		}
+	}
+
+	//===================================================
+	// is dpi awareness enabled
+	//===================================================
+	bool is_dpi_aware()
+	{
+		if (detail::load_user32_symbols() == detail::SYMBOLS_LOADED_AND_FOUND)
+		{
+			auto current_context = detail::get_thread_dpi_awareness_context();
+			if (detail::are_dpi_awareness_contexts_equal(current_context, DPI_AWARENESS_CONTEXT_UNAWARE))
+				return false;
+			else
+				return true;
+
+		}
+		else if (detail::load_shcore_symbols() == detail::SYMBOLS_LOADED_AND_FOUND)
+		{
+			PROCESS_DPI_AWARENESS current_awareness;
+			detail::get_process_dpi_awareness(NULL, &current_awareness);
+
+			if (current_awareness == PROCESS_DPI_UNAWARE)
+				return false;
+			else
+				return true;
+		}
+		else
+		{
+			return false;
+		}
+	}
+
+	//==================================================
+	// dpi scaling helper functions
+	//==================================================
+	int scale_value(int value, UINT dpi)
+	{
+		auto dpi_scale_ = MulDiv(dpi, 100, detail::Default_DPI);
+		return MulDiv(value, dpi_scale_, 100);
+	}
+
+	RECT scale_rect(const RECT& rect, UINT dpi)
+	{
+		auto dpi_scale_ = MulDiv(dpi, 100, detail::Default_DPI);
+
+		auto scaled_rect = rect;
+		scaled_rect.bottom = MulDiv(scaled_rect.bottom, dpi_scale_, 100);
+		scaled_rect.top = MulDiv(scaled_rect.top, dpi_scale_, 100);
+		scaled_rect.left = MulDiv(scaled_rect.left, dpi_scale_, 100);
+		scaled_rect.right = MulDiv(scaled_rect.right, dpi_scale_, 100);
+
+		return scaled_rect;
+	}
+
+	POINT scale_point(const POINT& point, UINT dpi)
+	{
+		auto dpi_scale_ = MulDiv(dpi, 100, detail::Default_DPI);
+
+		auto scaled_point = point;
+		scaled_point.x = MulDiv(scaled_point.x, dpi_scale_, 100);
+		scaled_point.y = MulDiv(scaled_point.y, dpi_scale_, 100);
+
+		return scaled_point;
+	}
+
+	HFONT scale_font(const HFONT hfont, UINT dpi)
+	{
+		LOGFONT log_font;
+		GetObject(hfont, sizeof(log_font), &log_font);
+
+		log_font.lfHeight = -1 * scale_value(abs(log_font.lfHeight), dpi);
+		auto scaled_font = CreateFontIndirect(&log_font);
+
+		return scaled_font;
+	}
+	
 }
 
 #endif

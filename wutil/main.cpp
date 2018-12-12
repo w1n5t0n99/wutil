@@ -9,17 +9,17 @@
 int main()
 {
 
-	auto ddevs = wutil::detail::get_all_display_devices();
+	auto ddevs = wutil::get_all_display_devices();
 
 	for (const auto& d : ddevs)
 		std::cout << d.DeviceName << " - " << d.DeviceString << "\n";
 
-	auto dsets = wutil::detail::get_monitor_display_settings(ddevs[1].DeviceName);
+	auto dsets = wutil::get_monitor_display_settings(ddevs[0].DeviceName);
 
 	std::cout << "=======================================================================\n";
 
 
-	auto mons = wutil::detail::get_all_monitor_info();
+	auto mons = wutil::get_all_monitor_info();
 
 	for (const auto& m : mons)
 	{
@@ -34,11 +34,11 @@ int main()
 			<< d.dmPosition.x << ": x " << d.dmPosition.y << ": y) " << d.dmDisplayFlags << ": flags \n";
 
 
-	auto fs_mon = wutil::detail::changes_display_settings_fullscreen(ddevs[1].DeviceName, dsets[20]);
+//	auto fs_mon = wutil::detail::changes_display_settings_fullscreen(ddevs[1].DeviceName, dsets[20]);
 
-	Sleep(5000);
+//	Sleep(5000);
 
-	wutil::detail::reset_display_settings_fullscreen(ddevs[1].DeviceName);
+//	wutil::detail::reset_display_settings_fullscreen(ddevs[1].DeviceName);
 
 	std::cin.get();
 	return 0;
